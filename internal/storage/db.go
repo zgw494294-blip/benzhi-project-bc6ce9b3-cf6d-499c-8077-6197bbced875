@@ -75,11 +75,12 @@ func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
 }
 
 func finishWrite(ctx context.Context, tx *sql.Tx) error {
+	if err := ctx.Err(); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("提交事务前请求已取消: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("提交事务: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("提交事务后请求已取消: %w", err)
 	}
 	return nil
 }
