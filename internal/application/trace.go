@@ -155,14 +155,18 @@ func (s *Service) CheckTrace(ctx context.Context, id string, q TraceQuery) (Chec
 			point.Reproducible = false
 		}
 		if pok && tok && c.RuleVersion == domain.RuleVersion {
-			var expected string
-			for _, x := range domain.Evaluate(profile, target, c.BaselineNo, "", time.Time{}) {
-				if x.RuleCode == c.RuleCode {
-					expected = x.InputDigest
+			var expected *domain.InterferenceCheck
+			evaluated := domain.Evaluate(profile, target, c.BaselineNo, "", time.Time{})
+			for i := range evaluated {
+				if evaluated[i].RuleCode == c.RuleCode {
+					expected = &evaluated[i]
 				}
 			}
-			if expected == "" || expected != c.InputDigest {
+			if expected == nil || expected.InputDigest != c.InputDigest {
 				point.Anomalies = append(point.Anomalies, "input_digest_mismatch")
+				point.Reproducible = false
+			} else if expected.MeasuredMargin != c.MeasuredMargin || expected.Result != c.Result {
+				point.Anomalies = append(point.Anomalies, "output_mismatch")
 				point.Reproducible = false
 			}
 		}
