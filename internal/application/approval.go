@@ -40,6 +40,13 @@ func (s *Service) Freeze(ctx context.Context, id, key string, p domain.Principal
 		if !readiness.Ready {
 			return domain.NewDetailedError(domain.CodeState, "readiness", "案件尚未达到冻结条件", readiness)
 		}
+		occupied, e := tx.FindWindowOccupancies(ctx, v.Case.StationCode, id, v.Case.EffectiveFrom, v.Case.EffectiveUntil, 100)
+		if e != nil {
+			return e
+		}
+		if len(occupied) > 0 {
+			return domain.NewDetailedError(domain.CodeConflict, "effectiveWindow", "同一台站的生效窗口已被占用", map[string]any{"occupancies": occupied})
+		}
 		profile, e := profileCurrent(v)
 		if e != nil {
 			return e
