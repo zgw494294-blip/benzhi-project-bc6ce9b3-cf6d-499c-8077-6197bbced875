@@ -13,6 +13,20 @@ type Verification struct {
 	Reason         string `json:"reason,omitempty"`
 }
 
+// ChainFingerprint summarizes the persisted content of the audit chain so that
+// any change to a single event (for example an actor rewritten directly in
+// storage without recomputing its Digest) is detectable. It covers the fields
+// that contribute to an event digest for every event, not only the chain head,
+// so a content change that leaves the stored head digest untouched still
+// invalidates a previously cached verification result.
+func ChainFingerprint(events []domain.AuditEvent) string {
+	parts := make([]any, 0, len(events)*7)
+	for _, e := range events {
+		parts = append(parts, e.CaseID, e.Sequence, e.EventType, e.Actor, e.PayloadDigest, e.PreviousDigest, e.Digest, e.CreatedAt)
+	}
+	return domain.Digest(parts...)
+}
+
 func Verify(events []domain.AuditEvent) Verification {
 	v := Verification{Valid: true, EventCount: len(events)}
 	previous := ""

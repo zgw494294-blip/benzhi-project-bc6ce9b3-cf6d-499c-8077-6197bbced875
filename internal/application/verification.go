@@ -14,10 +14,10 @@ type PermitVerification struct {
 }
 
 type permitAuditCacheEntry struct {
-	revision   int64
-	eventCount int
-	headDigest string
-	result     audit.Verification
+	revision    int64
+	eventCount  int
+	fingerprint string
+	result      audit.Verification
 }
 
 func (s *Service) VerifyPermit(ctx context.Context, id string) (PermitVerification, error) {
@@ -28,20 +28,17 @@ func (s *Service) VerifyPermit(ctx context.Context, id string) (PermitVerificati
 	if v.Permit == nil {
 		return PermitVerification{}, domain.NewError(domain.CodeNotFound, "permit", "案件尚未签发许可")
 	}
-	headDigest := ""
-	if len(v.Events) > 0 {
-		headDigest = v.Events[len(v.Events)-1].Digest
-	}
+	fingerprint := audit.ChainFingerprint(v.Events)
 	s.permitMu.RLock()
 	cached, ok := s.permitAudits[id]
 	s.permitMu.RUnlock()
 	var a audit.Verification
-	if ok && cached.revision == v.Case.Revision && cached.eventCount == len(v.Events) && cached.headDigest == headDigest {
+	if ok && cached.revision == v.Case.Revision && cached.eventCount == len(v.Events) && cached.fingerprint == fingerprint {
 		a = cached.result
 	} else {
 		a = audit.Verify(v.Events)
 		s.permitMu.Lock()
-		s.permitAudits[id] = permitAuditCacheEntry{revision: v.Case.Revision, eventCount: len(v.Events), headDigest: headDigest, result: a}
+		s.permitAudits[id] = permitAuditCacheEntry{revision: v.Case.Revision, eventCount: len(v.Events), fingerprint: fingerprint, result: a}
 		s.permitMu.Unlock()
 	}
 	digestOK := domain.PermitDigest(*v.Permit) == v.Permit.PermitDigest
