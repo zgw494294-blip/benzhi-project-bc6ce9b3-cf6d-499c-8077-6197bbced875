@@ -34,14 +34,22 @@ type CheckTrace struct {
 }
 
 type traceCacheKey struct {
-	caseID   string
-	revision int64
-	cursor   string
-	limit    int
+	caseID     string
+	revision   int64
+	baselineNo *int
+	targetID   string
+	ruleCode   string
+	cursor     string
+	limit      int
 }
 
 func newTraceCacheKey(caseID string, revision int64, q TraceQuery) traceCacheKey {
-	return traceCacheKey{caseID: caseID, revision: revision, cursor: q.Cursor, limit: q.Limit}
+	var baselineNo *int
+	if q.BaselineNo != nil {
+		value := *q.BaselineNo
+		baselineNo = &value
+	}
+	return traceCacheKey{caseID: caseID, revision: revision, baselineNo: baselineNo, targetID: q.TargetID, ruleCode: q.RuleCode, cursor: q.Cursor, limit: q.Limit}
 }
 
 func (s *Service) loadTraceProjection(caseID string, revision int64, q TraceQuery) (CheckTrace, bool) {
