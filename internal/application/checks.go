@@ -18,15 +18,57 @@ func (s *Service) loadPreview(key previewCacheKey) (domain.CheckPreview, bool) {
 	if !s.previewSet || s.previewKey != key {
 		return domain.CheckPreview{}, false
 	}
-	return s.preview, true
+	return clonePreview(s.preview), true
 }
 
 func (s *Service) savePreview(key previewCacheKey, preview domain.CheckPreview) {
 	s.previewMu.Lock()
 	defer s.previewMu.Unlock()
 	s.previewKey = key
-	s.preview = preview
+	s.preview = clonePreview(preview)
 	s.previewSet = true
+}
+
+// clonePreview returns a deep copy of preview so cached entries never share
+// mutable state with the values returned to callers. Results, each item's
+// InputSummary map and the nested targetRangeHz slice are all duplicated;
+// scalar fields are immutable and copied by value. This keeps successive
+// PreviewChecks calls returning a preview generated from case data that stays
+// consistent with PreviewDigest regardless of how a previous caller mutates
+// its returned value.
+func clonePreview(p domain.CheckPreview) domain.CheckPreview {
+	out := p
+	if p.Results == nil {
+		return out
+	}
+	results := make([]domain.CheckPreviewItem, len(p.Results))
+	for i := range p.Results {
+		item := p.Results[i]
+		item.InputSummary = cloneInputSummary(p.Results[i].InputSummary)
+		results[i] = item
+	}
+	out.Results = results
+	return out
+}
+
+// cloneInputSummary copies the summary map and its nested targetRangeHz slice
+// so callers cannot mutate cached data through aliased references.
+func cloneInputSummary(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		switch val := v.(type) {
+		case []int64:
+			cp := make([]int64, len(val))
+			copy(cp, val)
+			dst[k] = cp
+		default:
+			dst[k] = v
+		}
+	}
+	return dst
 }
 
 func evaluateAll(s *Service, profile domain.EmissionProfile, targets []domain.ProtectionTarget, now time.Time) []domain.InterferenceCheck {
