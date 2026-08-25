@@ -5,9 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	_ "modernc.org/sqlite"
+	"sync"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db               *sql.DB
+	sequenceMu       sync.Mutex
+	nextPermitByYear map[int]int
+}
 
 func Open(ctx context.Context, dsn string) (*Store, error) {
 	db, err := sql.Open("sqlite", dsn)
@@ -23,7 +28,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("迁移幂等记录: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, nextPermitByYear: map[int]int{}}, nil
 }
 
 func migrateIdempotency(ctx context.Context, db *sql.DB) error {
@@ -66,7 +71,7 @@ func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
 	if err != nil {
 		return err
 	}
-	w := &Tx{tx: tx}
+	w := &Tx{tx: tx, store: s}
 	if err = fn(w); err != nil {
 		_ = tx.Rollback()
 		return err
@@ -77,4 +82,7 @@ func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
 	return nil
 }
 
-type Tx struct{ tx *sql.Tx }
+type Tx struct {
+	tx    *sql.Tx
+	store *Store
+}
