@@ -8,17 +8,20 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"sync"
 	"time"
 )
 
 type Service struct {
-	store *storage.Store
-	now   func() time.Time
-	newID func() string
+	store      *storage.Store
+	now        func() time.Time
+	newID      func() string
+	traceMu    sync.Mutex
+	traceCache map[traceCacheKey][]byte
 }
 
 func New(store *storage.Store) *Service {
-	return &Service{store: store, now: time.Now, newID: randomID}
+	return &Service{store: store, now: time.Now, newID: randomID, traceCache: make(map[traceCacheKey][]byte)}
 }
 func randomID() string                   { var b [16]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func (s *Service) Store() *storage.Store { return s.store }

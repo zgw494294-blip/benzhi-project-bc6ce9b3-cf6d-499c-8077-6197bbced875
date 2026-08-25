@@ -3,6 +3,7 @@ package application
 import (
 	"benzhi-project-bc6ce9b3-cf6d-499c-8077-6197bbced875/internal/domain"
 	"context"
+	"encoding/json"
 	"strconv"
 	"time"
 )
@@ -30,6 +31,43 @@ type CheckTrace struct {
 	CaseID     string               `json:"caseId"`
 	Baselines  []CheckTraceBaseline `json:"baselines"`
 	NextCursor string               `json:"nextCursor,omitempty"`
+}
+
+type traceCacheKey struct {
+	caseID   string
+	revision int64
+	cursor   string
+	limit    int
+}
+
+func newTraceCacheKey(caseID string, revision int64, q TraceQuery) traceCacheKey {
+	return traceCacheKey{caseID: caseID, revision: revision, cursor: q.Cursor, limit: q.Limit}
+}
+
+func (s *Service) loadTraceProjection(caseID string, revision int64, q TraceQuery) (CheckTrace, bool) {
+	key := newTraceCacheKey(caseID, revision, q)
+	s.traceMu.Lock()
+	payload, ok := s.traceCache[key]
+	s.traceMu.Unlock()
+	if !ok {
+		return CheckTrace{}, false
+	}
+	var trace CheckTrace
+	if json.Unmarshal(payload, &trace) != nil {
+		return CheckTrace{}, false
+	}
+	return trace, true
+}
+
+func (s *Service) saveTraceProjection(caseID string, revision int64, q TraceQuery, trace CheckTrace) {
+	payload, err := json.Marshal(trace)
+	if err != nil {
+		return
+	}
+	key := newTraceCacheKey(caseID, revision, q)
+	s.traceMu.Lock()
+	s.traceCache[key] = payload
+	s.traceMu.Unlock()
 }
 
 func (s *Service) CheckTrace(ctx context.Context, id string, q TraceQuery) (CheckTrace, error) {
@@ -74,6 +112,9 @@ func (s *Service) CheckTrace(ctx context.Context, id string, q TraceQuery) (Chec
 		if err != nil || offset < 0 {
 			return CheckTrace{}, domain.NewError(domain.CodeInvalid, "cursor", "分页游标无效")
 		}
+	}
+	if cached, ok := s.loadTraceProjection(id, v.Case.Revision, q); ok {
+		return cached, nil
 	}
 	checks, total, hasMore, err := s.store.ReadChecksPage(ctx, id, q.BaselineNo, q.TargetID, q.RuleCode, q.Limit, offset)
 	if err != nil {
@@ -177,5 +218,6 @@ func (s *Service) CheckTrace(ctx context.Context, id string, q TraceQuery) (Chec
 	if hasMore {
 		out.NextCursor = strconv.Itoa(offset + len(checks))
 	}
+	s.saveTraceProjection(id, v.Case.Revision, q, out)
 	return out, nil
 }
