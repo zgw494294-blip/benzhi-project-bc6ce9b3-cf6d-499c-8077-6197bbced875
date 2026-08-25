@@ -62,7 +62,7 @@ func migrateIdempotency(ctx context.Context, db *sql.DB) error {
 func (s *Store) Close() error                   { return s.db.Close() }
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	tx, err := s.db.BeginTx(context.WithoutCancel(ctx), &sql.TxOptions{})
 	if err != nil {
 		return err
 	}
@@ -71,8 +71,15 @@ func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
 		_ = tx.Rollback()
 		return err
 	}
-	if err = tx.Commit(); err != nil {
+	return finishWrite(ctx, tx)
+}
+
+func finishWrite(ctx context.Context, tx *sql.Tx) error {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("提交事务: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("提交事务后请求已取消: %w", err)
 	}
 	return nil
 }
