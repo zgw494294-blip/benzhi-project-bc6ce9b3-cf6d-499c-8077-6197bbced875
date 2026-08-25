@@ -7,7 +7,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db          *sql.DB
+	writePermit chan struct{}
+}
 
 func Open(ctx context.Context, dsn string) (*Store, error) {
 	db, err := sql.Open("sqlite", dsn)
@@ -23,7 +26,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("迁移幂等记录: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, writePermit: make(chan struct{}, 1)}, nil
 }
 
 func migrateIdempotency(ctx context.Context, db *sql.DB) error {
@@ -62,10 +65,12 @@ func migrateIdempotency(ctx context.Context, db *sql.DB) error {
 func (s *Store) Close() error                   { return s.db.Close() }
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
+	s.writePermit <- struct{}{}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return err
 	}
+	defer func() { <-s.writePermit }()
 	w := &Tx{tx: tx}
 	if err = fn(w); err != nil {
 		_ = tx.Rollback()
