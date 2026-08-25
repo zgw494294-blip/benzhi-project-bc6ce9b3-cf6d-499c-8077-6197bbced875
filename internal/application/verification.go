@@ -9,8 +9,16 @@ import (
 type PermitVerification struct {
 	Valid             bool                     `json:"valid"`
 	PermitDigestValid bool                     `json:"permitDigestValid"`
+	AuditDigestValid  bool                     `json:"auditDigestValid"`
 	Audit             audit.Verification       `json:"audit"`
 	Permit            *domain.ActivationPermit `json:"permit,omitempty"`
+}
+
+func permitAuditCheckpointValid(verification audit.Verification, permit *domain.ActivationPermit) bool {
+	if permit == nil || permit.AuditDigest == "" {
+		return false
+	}
+	return verification.Valid && verification.EventCount > 0
 }
 
 func (s *Service) VerifyPermit(ctx context.Context, id string) (PermitVerification, error) {
@@ -23,5 +31,6 @@ func (s *Service) VerifyPermit(ctx context.Context, id string) (PermitVerificati
 	}
 	a := audit.Verify(v.Events)
 	digestOK := domain.PermitDigest(*v.Permit) == v.Permit.PermitDigest
-	return PermitVerification{Valid: a.Valid && digestOK, PermitDigestValid: digestOK, Audit: a, Permit: v.Permit}, nil
+	auditDigestOK := permitAuditCheckpointValid(a, v.Permit)
+	return PermitVerification{Valid: a.Valid && digestOK && auditDigestOK, PermitDigestValid: digestOK, AuditDigestValid: auditDigestOK, Audit: a, Permit: v.Permit}, nil
 }
