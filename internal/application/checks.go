@@ -7,6 +7,28 @@ import (
 	"time"
 )
 
+type previewCacheKey struct {
+	caseID   string
+	revision int64
+}
+
+func (s *Service) loadPreview(key previewCacheKey) (domain.CheckPreview, bool) {
+	s.previewMu.RLock()
+	defer s.previewMu.RUnlock()
+	if !s.previewSet || s.previewKey != key {
+		return domain.CheckPreview{}, false
+	}
+	return s.preview, true
+}
+
+func (s *Service) savePreview(key previewCacheKey, preview domain.CheckPreview) {
+	s.previewMu.Lock()
+	defer s.previewMu.Unlock()
+	s.previewKey = key
+	s.preview = preview
+	s.previewSet = true
+}
+
 func evaluateAll(s *Service, profile domain.EmissionProfile, targets []domain.ProtectionTarget, now time.Time) []domain.InterferenceCheck {
 	var out []domain.InterferenceCheck
 	for _, t := range targets {
@@ -27,11 +49,20 @@ func (s *Service) PreviewChecks(ctx context.Context, id string, p domain.Princip
 	if err != nil {
 		return domain.CheckPreview{}, err
 	}
+	key := previewCacheKey{caseID: id, revision: v.Case.Revision}
+	if preview, ok := s.loadPreview(key); ok {
+		return preview, nil
+	}
 	profile, err := profileCurrent(v)
 	if err != nil {
 		return domain.CheckPreview{}, err
 	}
-	return domain.PreviewFor(v.Case, profile, v.Targets)
+	preview, err := domain.PreviewFor(v.Case, profile, v.Targets)
+	if err != nil {
+		return domain.CheckPreview{}, err
+	}
+	s.savePreview(key, preview)
+	return preview, nil
 }
 
 func (s *Service) Submit(ctx context.Context, id, key string, p domain.Principal, in RevisionInput) (out domain.CaseView, err error) {
