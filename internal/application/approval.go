@@ -9,11 +9,28 @@ import (
 )
 
 func (s *Service) FreezeReadiness(ctx context.Context, id string) (domain.FreezeReadiness, error) {
+	if cached, ok := s.freezeReadinessCache[id]; ok {
+		return cloneFreezeReadiness(cached), nil
+	}
 	v, err := s.store.LoadCase(ctx, id)
 	if err != nil {
 		return domain.FreezeReadiness{}, err
 	}
-	return domain.FreezeDiagnosis(v), nil
+	readiness := domain.FreezeDiagnosis(v)
+	if v.Case.Status == domain.StatusApproved || v.Case.Status == domain.StatusRejected {
+		s.freezeReadinessCache[id] = cloneFreezeReadiness(readiness)
+	}
+	return readiness, nil
+}
+
+func cloneFreezeReadiness(in domain.FreezeReadiness) domain.FreezeReadiness {
+	out := in
+	out.Counts = make(map[domain.ResolutionStatus]int, len(in.Counts))
+	for status, count := range in.Counts {
+		out.Counts[status] = count
+	}
+	out.Blockers = append([]domain.FreezeBlocker(nil), in.Blockers...)
+	return out
 }
 
 func (s *Service) Freeze(ctx context.Context, id, key string, p domain.Principal, in RevisionInput) (out domain.CaseView, err error) {

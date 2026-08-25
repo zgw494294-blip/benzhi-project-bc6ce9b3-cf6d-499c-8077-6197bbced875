@@ -12,13 +12,19 @@ import (
 )
 
 type Service struct {
-	store *storage.Store
-	now   func() time.Time
-	newID func() string
+	store                *storage.Store
+	now                  func() time.Time
+	newID                func() string
+	freezeReadinessCache map[string]domain.FreezeReadiness
 }
 
 func New(store *storage.Store) *Service {
-	return &Service{store: store, now: time.Now, newID: randomID}
+	return &Service{
+		store:                store,
+		now:                  time.Now,
+		newID:                randomID,
+		freezeReadinessCache: make(map[string]domain.FreezeReadiness),
+	}
 }
 func randomID() string                   { var b [16]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func (s *Service) Store() *storage.Store { return s.store }
